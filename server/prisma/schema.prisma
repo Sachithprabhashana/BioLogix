@@ -1,0 +1,51 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum AttendanceStatus {
+  VERIFIED
+  FLAGGED
+  OFFLINE_QUEUED
+}
+
+model User {
+  id                  String          @id @default(uuid())
+  employeeCode        String          @unique
+  fullName            String
+  email               String          @unique
+  passwordHash        String
+  role                Role            @default(EMPLOYEE)
+  encryptedBiometric  String?         // AES-256 encrypted face embedding vector
+  biometricHash       String?         // SHA-256 hash for quick integrity check
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  attendanceLogs      AttendanceLog[]
+}
+
+model AttendanceLog {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkInTime      DateTime         @default(now())
+  syncedAt         DateTime?        // Populated when offline check-ins sync later
+  latitude         Float?
+  longitude        Float?
+  confidenceScore  Float?
+  status           AttendanceStatus @default(VERIFIED)
+  isOfflineSync    Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+}

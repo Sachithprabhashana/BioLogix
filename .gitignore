@@ -17,3 +17,9 @@ build/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# AI agent & skill folders
+server/.agents/
+.claude/
+.windsurf/
+skills-lock.json
