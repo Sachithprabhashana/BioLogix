@@ -207,3 +207,68 @@ export async function verifyCheckIn(req: Request, res: Response) {
         })
     }
 }
+
+export const checkOut = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { employeeCode } = req.body;
+
+        if (!employeeCode) {
+            res.status(400).json({ error: 'employeeCode is required' });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { employeeCode },
+        });
+
+        if (!user) {
+            res.status(404).json({ error: `Employee ${employeeCode} not found` });
+            return;
+        }
+
+        const openLog = await prisma.attendanceLog.findFirst({
+            where: {
+                userId: user.id,
+                checkOutTime: null,
+            },
+            orderBy: {
+                checkInTime: 'desc',
+            },
+        });
+
+        if (!openLog) {
+            res.status(400).json({
+                error: `No active check-in found for ${employeeCode} to check out from.`,
+            });
+            return;
+        }
+
+        const now = new Date();
+        const durationMs = now.getTime() - new Date(openLog.checkInTime).getTime();
+        const totalHours = Number((durationMs / (1000 * 60 * 60)).toFixed(2));
+
+        const updatedLog = await prisma.attendanceLog.update({
+            where: { id: openLog.id },
+            data: {
+                checkOutTime: now,
+                totalHours,
+            },
+            include: {
+                user: {
+                    select: {
+                        employeeCode: true,
+                        fullName: true,
+                    },
+                },
+            },
+        });
+
+        res.status(200).json({
+            message: `Checked out ${employeeCode} (${totalHours} hrs)`,
+            log: updatedLog,
+        });
+    } catch (error) {
+        console.error('Error in checkOut:', error);
+        res.status(500).json({ error: 'Failed to process check-out' });
+    }
+};

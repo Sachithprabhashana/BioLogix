@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { WebcamCapture } from './components/WebcamCapture'
 
 interface User {
   id: string
@@ -12,6 +13,8 @@ interface AttendanceRecord {
   id: string
   userId: string
   checkInTime: string
+  checkOutTime?: string | null
+  totalHours?: number | null
   latitude: number | null
   longitude: number | null
   confidenceScore: number | null
@@ -31,6 +34,7 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   const [showAddUser, setShowAddUser] = useState(false)
   const [employeeCode, setEmployeeCode] = useState('')
@@ -120,6 +124,30 @@ export function App() {
     }
   }
 
+  async function handleCheckOut() {
+    if (!selectedCode) return
+
+    setStatusMessage('Recording check-out...')
+    try {
+      const res = await fetch('/api/attendance/check-out', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeCode: selectedCode }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        setStatusMessage(data.error || data.message || 'Check-out failed.')
+        return
+      }
+
+      setStatusMessage(data.message || `Checked out ${selectedCode}.`)
+      await loadDashboardData()
+    } catch {
+      setStatusMessage('Network error while checking out.')
+    }
+  }
+
   async function handleCreateUser(e: FormEvent) {
     e.preventDefault()
 
@@ -162,6 +190,16 @@ export function App() {
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null
+    setSelectedFile(file)
+    if (file) {
+      setPhotoPreview(URL.createObjectURL(file))
+    } else {
+      setPhotoPreview(null)
+    }
+  }
+
   useEffect(() => {
     loadDashboardData()
   }, [])
@@ -197,7 +235,7 @@ export function App() {
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              onChange={handleFileChange}
               className="text-xs text-slate-300 file:mr-2 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-100 hover:file:bg-slate-700 cursor-pointer"
             />
 
@@ -219,11 +257,43 @@ export function App() {
 
             <button
               type="button"
+              onClick={handleCheckOut}
+              className="rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
+            >
+              Check-Out
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowAddUser((prev) => !prev)}
               className="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold px-3.5 py-2 text-sm cursor-pointer"
             >
               {showAddUser ? 'Close Form' : '+ Add Employee'}
             </button>
+
+            <WebcamCapture
+              onPhotoCaptured={(file, previewUrl) => {
+                setSelectedFile(file)
+                setPhotoPreview(previewUrl)
+                setStatusMessage(
+                  'Webcam photo captured. Click "AI Verify Check-In" to submit.'
+                )
+              }}
+              onCameraError={(msg) => setStatusMessage(msg)}
+            />
+
+            {photoPreview && (
+              <div className="mt-2 flex items-center gap-3">
+                <img
+                  src={photoPreview}
+                  alt="Selected check-in preview"
+                  className="h-20 w-20 rounded-lg border border-slate-700 object-cover"
+                />
+                <span className="text-xs text-slate-400">
+                  {selectedFile?.name} ready for AI verification
+                </span>
+              </div>
+            )}
           </div>
         </header>
 
@@ -333,7 +403,9 @@ export function App() {
                     <th className="py-2 pr-4">Employee</th>
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Confidence</th>
-                    <th className="py-2">Check-In Time</th>
+                    <th className="py-2 pr-4">Check-In Time</th>
+                    <th className="py-2 pr-4">Check-Out Time</th>
+                    <th className="py-2">Hours</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -347,8 +419,18 @@ export function App() {
                       <td className="py-2 pr-4">
                         {log.confidenceScore ?? '—'}
                       </td>
-                      <td className="py-2 text-slate-300">
+                      <td className="py-2 pr-4 text-slate-300">
                         {new Date(log.checkInTime).toLocaleString()}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {log.checkOutTime
+                          ? new Date(log.checkOutTime).toLocaleString()
+                          : 'Active'}
+                      </td>
+                      <td className="py-2 text-amber-300">
+                        {log.totalHours !== null && log.totalHours !== undefined
+                          ? `${log.totalHours} hrs`
+                          : '—'}
                       </td>
                     </tr>
                   ))}

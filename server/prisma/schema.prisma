@@ -37,15 +37,17 @@ model User {
 }
 
 model AttendanceLog {
-  id               String           @id @default(uuid())
-  userId           String
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  checkInTime      DateTime         @default(now())
-  syncedAt         DateTime?        // Populated when offline check-ins sync later
-  latitude         Float?
-  longitude        Float?
-  confidenceScore  Float?
-  status           AttendanceStatus @default(VERIFIED)
-  isOfflineSync    Boolean          @default(false)
-  createdAt        DateTime         @default(now())
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkInTime     DateTime         @default(now())
+  checkOutTime    DateTime?
+  totalHours      Float?
+  syncedAt        DateTime?        // Populated when offline check-ins sync later
+  latitude        Float?
+  longitude       Float?
+  confidenceScore Float?
+  status          AttendanceStatus @default(VERIFIED)
+  isOfflineSync   Boolean          @default(false)
+  createdAt       DateTime         @default(now())
 }
