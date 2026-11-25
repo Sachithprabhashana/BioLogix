@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 
 interface User {
   id: string
@@ -31,6 +31,13 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+
+  const [showAddUser, setShowAddUser] = useState(false)
+  const [employeeCode, setEmployeeCode] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('Employee123')
+  const [role, setRole] = useState<'EMPLOYEE' | 'ADMIN'>('EMPLOYEE')
 
   async function loadDashboardData() {
     setLoading(true)
@@ -113,6 +120,48 @@ export function App() {
     }
   }
 
+  async function handleCreateUser(e: FormEvent) {
+    e.preventDefault()
+
+    if (!employeeCode.trim() || !fullName.trim() || !email.trim()) {
+      setStatusMessage('Please fill in Employee Code, Full Name, and Email.')
+      return
+    }
+
+    setStatusMessage('Creating employee...')
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeCode: employeeCode.trim(),
+          fullName: fullName.trim(),
+          email: email.trim(),
+          password,
+          role,
+        }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setStatusMessage(data.message || 'Could not create employee.')
+        return
+      }
+
+      const createdCode = data.data?.employeeCode || employeeCode.trim()
+      setEmployeeCode('')
+      setFullName('')
+      setEmail('')
+      setPassword('Employee123')
+      setShowAddUser(false)
+      setSelectedCode(createdCode)
+      setStatusMessage(`Added employee ${createdCode}.`)
+      await loadDashboardData()
+    } catch {
+      setStatusMessage('Network error while creating employee.')
+    }
+  }
+
   useEffect(() => {
     loadDashboardData()
   }, [])
@@ -153,6 +202,7 @@ export function App() {
             />
 
             <button
+              type="button"
               onClick={handleAiCheckIn}
               className="rounded-lg bg-sky-400 hover:bg-sky-300 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
             >
@@ -160,10 +210,19 @@ export function App() {
             </button>
 
             <button
+              type="button"
               onClick={handleTestCheckIn}
               className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
             >
               Test Check-In
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAddUser((prev) => !prev)}
+              className="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold px-3.5 py-2 text-sm cursor-pointer"
+            >
+              {showAddUser ? 'Close Form' : '+ Add Employee'}
             </button>
           </div>
         </header>
@@ -172,6 +231,58 @@ export function App() {
           <div className="rounded-lg bg-slate-900 border border-slate-800 px-4 py-2.5 text-sm text-emerald-300">
             {statusMessage}
           </div>
+        )}
+
+        {showAddUser && (
+          <form
+            onSubmit={handleCreateUser}
+            className="rounded-xl bg-slate-900 border border-slate-800 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3"
+          >
+            <input
+              type="text"
+              placeholder="Code (e.g. EMP002)"
+              value={employeeCode}
+              onChange={(e) => setEmployeeCode(e.target.value)}
+              className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Full Name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm"
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm"
+            />
+            <select
+              value={role}
+              onChange={(e) =>
+                setRole(e.target.value === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE')
+              }
+              className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm"
+            >
+              <option value="EMPLOYEE">EMPLOYEE</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+            <button
+              type="submit"
+              className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
+            >
+              Save Employee
+            </button>
+          </form>
         )}
 
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
