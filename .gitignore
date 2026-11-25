@@ -3,7 +3,10 @@ node_modules/
 venv/
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+.pytest_cache/
+instance/
 
 # Build outputs
 dist/
@@ -11,12 +14,14 @@ build/
 
 # Environment variables & secrets
 .env
-.env.local
+.env.*
+!.env.example
 
 # OS & Editor files
 .DS_Store
 Thumbs.db
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 
 # AI agent & skill folders
 server/.agents/
