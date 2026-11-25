@@ -104,3 +104,106 @@ export const getAttendanceLogs = async (_req: Request, res: Response): Promise<v
         });
     }
 };
+
+
+export async function verifyCheckIn(req: Request, res: Response) {
+    try {
+        const { employeeCode, latitude, longitude } = req.body as {
+            employeeCode?: string
+            latitude?: string | number
+            longitude?: string | number
+        }
+
+        if (!employeeCode) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'employeeCode is required',
+            })
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'image file is required',
+            })
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { employeeCode },
+        })
+
+        if (!user) {
+            return res.status(404).json({
+                status: 'error',
+                message: `User with employeeCode ${employeeCode} not found`,
+            })
+        }
+
+        const formData = new FormData()
+        const blob = new Blob([new Uint8Array(req.file.buffer)], {
+            type: req.file.mimetype || 'image/jpeg',
+        })
+        formData.append('image', blob, req.file.originalname || 'check-in.jpg')
+
+        const aiResponse = await fetch('http://127.0.0.1:5001/verify-face', {
+            method: 'POST',
+            body: formData,
+        })
+
+        const aiResult = (await aiResponse.json()) as {
+            status?: string
+            message?: string
+            confidenceScore?: number
+            suggestedStatus?: string
+        }
+
+        if (!aiResponse.ok || aiResult.status === 'error') {
+            return res.status(502).json({
+                status: 'error',
+                message: aiResult.message || 'AI service failed to verify image',
+            })
+        }
+
+        const confidenceScore =
+            typeof aiResult.confidenceScore === 'number' ? aiResult.confidenceScore : 0.5
+        const attendanceStatus =
+            aiResult.suggestedStatus === 'VERIFIED' ? 'VERIFIED' : 'REVIEW'
+
+        const parsedLat =
+            latitude !== undefined && latitude !== '' ? Number(latitude) : 6.7951
+        const parsedLng =
+            longitude !== undefined && longitude !== '' ? Number(longitude) : 79.9009
+
+        const log = await prisma.attendanceLog.create({
+            data: {
+                userId: user.id,
+                latitude: Number.isFinite(parsedLat) ? parsedLat : null,
+                longitude: Number.isFinite(parsedLng) ? parsedLng : null,
+                confidenceScore,
+                status: attendanceStatus,
+                isOfflineSync: false,
+            },
+            include: {
+                user: {
+                    select: {
+                        employeeCode: true,
+                        fullName: true,
+                        email: true,
+                    },
+                },
+            },
+        })
+
+        return res.status(201).json({
+            status: 'ok',
+            ai: aiResult,
+            data: log,
+        })
+    } catch (error) {
+        console.error('verifyCheckIn error:', error)
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to process AI attendance check-in',
+        })
+    }
+}

@@ -30,6 +30,7 @@ export function App() {
   const [selectedCode, setSelectedCode] = useState('EMP001')
   const [statusMessage, setStatusMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
   async function loadDashboardData() {
     setLoading(true)
@@ -47,6 +48,42 @@ export function App() {
       setStatusMessage('Could not reach backend API on port 5000.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleAiCheckIn() {
+    if (!selectedFile) {
+      setStatusMessage('Please choose an image first.')
+      return
+    }
+
+    setStatusMessage('Verifying image with AI service...')
+    try {
+      const formData = new FormData()
+      formData.append('employeeCode', selectedCode)
+      formData.append('latitude', '6.7951')
+      formData.append('longitude', '79.9009')
+      formData.append('image', selectedFile)
+
+      const res = await fetch('/api/attendance/verify-check-in', {
+        method: 'POST',
+        body: formData,
+      })
+      const result = await res.json()
+
+      if (!res.ok) {
+        setStatusMessage(result.message || 'AI check-in failed.')
+        return
+      }
+
+      const score = result.data?.confidenceScore ?? '—'
+      const logStatus = result.data?.status ?? 'REVIEW'
+      setStatusMessage(
+        `AI Check-In saved (${logStatus}, confidence: ${score}) for ${selectedCode}.`
+      )
+      await loadDashboardData()
+    } catch {
+      setStatusMessage('Network error during AI check-in.')
     }
   }
 
@@ -90,7 +127,8 @@ export function App() {
               Attendance &amp; Employee Dashboard
             </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
             <select
               value={selectedCode}
               onChange={(e) => setSelectedCode(e.target.value)}
@@ -106,6 +144,21 @@ export function App() {
                 <option value="EMP001">EMP001</option>
               )}
             </select>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              className="text-xs text-slate-300 file:mr-2 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-100 hover:file:bg-slate-700 cursor-pointer"
+            />
+
+            <button
+              onClick={handleAiCheckIn}
+              className="rounded-lg bg-sky-400 hover:bg-sky-300 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
+            >
+              AI Verify Check-In
+            </button>
+
             <button
               onClick={handleTestCheckIn}
               className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 text-sm cursor-pointer"
