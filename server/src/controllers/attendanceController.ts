@@ -1,6 +1,16 @@
 import { Request, Response } from "express";
 import { prisma } from "../config/prisma";
 
+interface MatchFaceResponse {
+    status?: string;
+    faceDetected?: boolean;
+    matched?: boolean;
+    similarityScore?: number;
+    detectionConfidence?: number;
+    suggestedStatus?: "VERIFIED" | "FLAGGED" | "REJECTED";
+    message?: string;
+}
+
 // POST /api/attendance/check-in - Record an employee attendance log
 export const checkIn = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -105,74 +115,127 @@ export const getAttendanceLogs = async (_req: Request, res: Response): Promise<v
     }
 };
 
-
 export async function verifyCheckIn(req: Request, res: Response) {
     try {
         const { employeeCode, latitude, longitude } = req.body as {
-            employeeCode?: string
-            latitude?: string | number
-            longitude?: string | number
-        }
+            employeeCode?: string;
+            latitude?: string | number;
+            longitude?: string | number;
+        };
 
         if (!employeeCode) {
             return res.status(400).json({
-                status: 'error',
-                message: 'employeeCode is required',
-            })
+                status: "error",
+                message: "employeeCode is required",
+            });
         }
 
         if (!req.file) {
             return res.status(400).json({
-                status: 'error',
-                message: 'image file is required',
-            })
+                status: "error",
+                message: "image file is required",
+            });
         }
 
         const user = await prisma.user.findUnique({
             where: { employeeCode },
-        })
+        });
 
         if (!user) {
             return res.status(404).json({
-                status: 'error',
+                status: "error",
                 message: `User with employeeCode ${employeeCode} not found`,
-            })
+            });
         }
 
-        const formData = new FormData()
-        const blob = new Blob([new Uint8Array(req.file.buffer)], {
-            type: req.file.mimetype || 'image/jpeg',
-        })
-        formData.append('image', blob, req.file.originalname || 'check-in.jpg')
+        let confidenceScore = 0;
+        let attendanceStatus: "VERIFIED" | "FLAGGED" = "FLAGGED";
+        let matchResult: MatchFaceResponse | null = null;
 
-        const aiResponse = await fetch('http://127.0.0.1:5001/verify-face', {
-            method: 'POST',
-            body: formData,
-        })
+        if (user.encryptedBiometric) {
+            const formData = new FormData();
+            const blob = new Blob([new Uint8Array(req.file.buffer)], {
+                type: req.file.mimetype || "image/jpeg",
+            });
+            formData.append("image", blob, req.file.originalname || "check-in.jpg");
+            formData.append("referenceEmbedding", user.encryptedBiometric);
 
-        const aiResult = (await aiResponse.json()) as {
-            status?: string
-            message?: string
-            confidenceScore?: number
-            suggestedStatus?: string
+            const aiResponse = await fetch("http://127.0.0.1:5001/match-face", {
+                method: "POST",
+                body: formData,
+            });
+
+            matchResult = (await aiResponse.json()) as MatchFaceResponse;
+
+            if (!aiResponse.ok || matchResult.status === "error") {
+                const statusCode = aiResponse.status === 422 ? 422 : 502;
+                return res.status(statusCode).json({
+                    status: "error",
+                    message: matchResult.message || "No face detected in check-in image",
+                });
+            }
+
+            if (matchResult.faceDetected === false) {
+                return res.status(422).json({
+                    status: "error",
+                    message: matchResult.message || "No face detected in check-in image",
+                });
+            }
+
+            confidenceScore =
+                typeof matchResult.similarityScore === "number"
+                    ? matchResult.similarityScore
+                    : 0;
+            attendanceStatus = matchResult.matched ? "VERIFIED" : "FLAGGED";
+        } else {
+            // Fallback to face check if no reference embedding is enrolled yet
+            const formData = new FormData();
+            const blob = new Blob([new Uint8Array(req.file.buffer)], {
+                type: req.file.mimetype || "image/jpeg",
+            });
+            formData.append("image", blob, req.file.originalname || "check-in.jpg");
+
+            const aiResponse = await fetch("http://127.0.0.1:5001/verify-face", {
+                method: "POST",
+                body: formData,
+            });
+
+            const aiResult = (await aiResponse.json()) as {
+                status?: string;
+                faceDetected?: boolean;
+                message?: string;
+                confidenceScore?: number;
+            };
+
+            if (!aiResponse.ok || aiResult.status === "error") {
+                const statusCode = aiResponse.status === 422 ? 422 : 502;
+                return res.status(statusCode).json({
+                    status: "error",
+                    message: aiResult.message || "No face detected in image",
+                });
+            }
+
+            if (aiResult.faceDetected === false) {
+                return res.status(422).json({
+                    status: "error",
+                    message: aiResult.message || "No face detected in image",
+                });
+            }
+
+            confidenceScore =
+                typeof aiResult.confidenceScore === "number" ? aiResult.confidenceScore : 0;
+            attendanceStatus = "FLAGGED";
+            matchResult = {
+                matched: false,
+                similarityScore: confidenceScore,
+                message: "No reference face enrolled for employee; check-in flagged for review.",
+            };
         }
-
-        if (!aiResponse.ok || aiResult.status === 'error') {
-            return res.status(502).json({
-                status: 'error',
-                message: aiResult.message || 'AI service failed to verify image',
-            })
-        }
-
-        const confidenceScore =
-            typeof aiResult.confidenceScore === 'number' ? aiResult.confidenceScore : 0.5
-        const attendanceStatus =
-            aiResult.suggestedStatus === 'VERIFIED' ? 'VERIFIED' : 'REVIEW'
 
         const parsedLat =
-            latitude !== undefined && latitude !== '' ? Number(latitude) : 6.7951
+            latitude !== undefined && latitude !== "" ? Number(latitude) : 6.7951;
         const parsedLng =
-            longitude !== undefined && longitude !== '' ? Number(longitude) : 79.9009
+            longitude !== undefined && longitude !== "" ? Number(longitude) : 79.9009;
 
         const log = await prisma.attendanceLog.create({
             data: {
@@ -192,19 +255,19 @@ export async function verifyCheckIn(req: Request, res: Response) {
                     },
                 },
             },
-        })
+        });
 
         return res.status(201).json({
-            status: 'ok',
-            ai: aiResult,
+            status: "ok",
+            ai: matchResult,
             data: log,
-        })
+        });
     } catch (error) {
-        console.error('verifyCheckIn error:', error)
+        console.error("verifyCheckIn error:", error);
         return res.status(500).json({
-            status: 'error',
-            message: 'Failed to process AI attendance check-in',
-        })
+            status: "error",
+            message: "Failed to process AI attendance check-in",
+        });
     }
 }
 
@@ -213,7 +276,7 @@ export const checkOut = async (req: Request, res: Response): Promise<void> => {
         const { employeeCode } = req.body;
 
         if (!employeeCode) {
-            res.status(400).json({ error: 'employeeCode is required' });
+            res.status(400).json({ error: "employeeCode is required" });
             return;
         }
 
@@ -232,7 +295,7 @@ export const checkOut = async (req: Request, res: Response): Promise<void> => {
                 checkOutTime: null,
             },
             orderBy: {
-                checkInTime: 'desc',
+                checkInTime: "desc",
             },
         });
 
@@ -268,7 +331,7 @@ export const checkOut = async (req: Request, res: Response): Promise<void> => {
             log: updatedLog,
         });
     } catch (error) {
-        console.error('Error in checkOut:', error);
-        res.status(500).json({ error: 'Failed to process check-out' });
+        console.error("Error in checkOut:", error);
+        res.status(500).json({ error: "Failed to process check-out" });
     }
 };

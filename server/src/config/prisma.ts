@@ -13,7 +13,11 @@ const createPrismaClient = () => {
         throw new Error("DATABASE_URL is missing in server/.env");
     }
 
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({
+        connectionString,
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
+    });
     const adapter = new PrismaPg(pool);
 
     return new PrismaClient({
